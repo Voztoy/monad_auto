@@ -22,6 +22,8 @@
    npm install ethers@5
    npm install xlsx
    npm install colors
+   npm install axios
+   
    ```
 3.  Thay ví trong file wallet.txt
 Mỗi privatekey một dòng (có 0x)
