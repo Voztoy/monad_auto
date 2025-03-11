@@ -23,7 +23,7 @@ Monad auto transaction
    npm install xlsx
    npm install colors
    ```
-3.  Tạo file wallet.txt trong folder \scripts
+3.  Thay ví trong file wallet.txt
 Mỗi privatekey một dòng (có 0x)
 
 
