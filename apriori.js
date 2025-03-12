@@ -8,9 +8,9 @@ const RPC_URL = "https://testnet-rpc.monad.xyz/";
 const EXPLORER_URL = "https://testnet.monadexplorer.com/tx/";
 const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
 const contractAddress = "0xb2f82D0f38dc453D596Ad40A37799446Cc89274A";
-const gasLimitStake = 500000;
-const gasLimitUnstake = 800000;
-const gasLimitClaim = 800000;
+const gasLimitStake = 150000;
+const gasLimitUnstake = 380000;
+const gasLimitClaim = 380000;
 
 const minimalABI = [
   "function getPendingUnstakeRequests(address) view returns (uint256[] memory)",
@@ -60,8 +60,8 @@ async function getRandomAmount(wallet) {
 }
 
 function getRandomDelay() {
-  const minDelay = 30 * 1000;
-  const maxDelay = 1 * 60 * 1000;
+  const minDelay = 1000;
+  const maxDelay = 5000;
   return Math.floor(Math.random() * (maxDelay - minDelay + 1) + minDelay);
 }
 
@@ -106,45 +106,60 @@ async function stakeMON(wallet, cycleNumber) {
   }
 }
 
-async function requestUnstakeAprMON(wallet, amountToUnstake, cycleNumber) {
-  try {
-    console.log(
-      `\n[Chu kỳ ${cycleNumber}] chuẩn bị unstake aprMON...`.magenta
-    );
-    console.log(`Wallet: ${wallet.address}`.cyan);
-    console.log(
-      `Số lượng unstake: ${ethers.utils.formatEther(
-        amountToUnstake
-      )} aprMON`
-    );
+// ABI tối thiểu để kiểm tra số dư ERC20
+const ERC20_ABI = ["function balanceOf(address owner) view returns (uint256)"];
 
-    const data =
-      "0x7d41c86e" +
-      ethers.utils.hexZeroPad(amountToUnstake.toHexString(), 32).slice(2) +
-      ethers.utils.hexZeroPad(wallet.address, 32).slice(2) +
-      ethers.utils.hexZeroPad(wallet.address, 32).slice(2);
+async function UnstakeAprMON(wallet, cycleNumber) {
+  
+  // Tạo đối tượng hợp đồng ERC20
+  const tokenContract = new ethers.Contract(contractAddress, ERC20_ABI, provider);
+
+  // Đọc privatekey
+  try {
+    // Kiểm tra số dư token
+    const balance = await tokenContract.balanceOf(wallet.address);
+    const balanceInTokens = ethers.utils.formatUnits(balance, 18);
+
+    // Tính toán số token cần gửi
+    const B = parseFloat(balanceInTokens) * 0.95; // 95% số dư
+    const roundedB = B.toFixed(2); // Làm tròn đến 2 chữ số thập phân
+
+    // Xây dựng dữ liệu giao dịch
+    const amount = roundedB; // Số lượng aprMON
+    const decimals = 18; // Số thập phân của token
+    const referrer = wallet.address; // Địa chỉ ví của người gửi
+    const to = wallet.address; // Địa chỉ ví của người nhận
+    const amountInWei = ethers.utils.parseUnits(amount.toString(), decimals); // Chuyển đổi số lượng token sang wei
+    const functionSelector = "0x7d41c86e";
+    const D =
+      functionSelector +
+      ethers.utils.hexZeroPad(amountInWei.toHexString(), 32).slice(2) + // amount (32 byte)
+      ethers.utils.hexZeroPad(to, 32).slice(2) + // referrer (32 byte)
+      ethers.utils.hexZeroPad(to, 32).slice(2); // to (32 byte)
+    console.log("Hexdata:", D);
+
 
     const tx = {
       to: contractAddress,
-      data: data,
-      gasLimit: ethers.utils.hexlify(gasLimitUnstake),
-      value: ethers.utils.parseEther("0"),
+      value: 0,
+      data: D,
+      gasLimit: 300000,
+      gasPrice: ethers.utils.parseUnits("55", "gwei"), // Sử dụng gasPrice nếu mạng không hỗ trợ EIP-1559
     };
 
-    console.log("🔄 Gửi yêu cầu unstake...");
+    // Gửi giao dịch
     const txResponse = await wallet.sendTransaction(tx);
-    console.log(
-      `➡️  Transaction sent: ${EXPLORER_URL}${txResponse.hash}`.yellow
-    );
-
-    console.log("🔄 Đang chờ xác nhận giao dịch...");
     const receipt = await txResponse.wait();
-    console.log(`✔️  Unstake thành công!`.green.underline);
 
-    return receipt;
+    console.log(`🟢 Wallet: ${wallet.address}`);
+    console.log(`🔹 Balance: ${balanceInTokens} tokens`);
+    console.log(`🔹 Tokens sent: ${roundedB}`);
+    console.log(`🔹 Tx Hash: ${txResponse.hash}`);
+    console.log(`🔹 Block: ${receipt.blockNumber}`);
+    console.log("--------------------------------------------------");
+
   } catch (error) {
-    console.error("❌ Unstake thất bại:".red, error.message);
-    throw error;
+    console.log(`⚠️ Skipping wallet ${wallet.address} due to error: ${error.message}`);
   }
 }
 
@@ -225,6 +240,7 @@ async function claimMON(wallet, cycleNumber) {
   }
 }
 
+
 async function runCycle(wallet, cycleNumber) {
   try {
     console.log(`\n=== Bắt đầu chu kỳ ${cycleNumber} / ${wallet.address} ===`);
@@ -239,7 +255,7 @@ async function runCycle(wallet, cycleNumber) {
     );
     await delay(delayTimeBeforeUnstake);
 
-    await requestUnstakeAprMON(wallet, stakeAmount, cycleNumber);
+    await UnstakeAprMON(wallet, stakeAmount, cycleNumber);
 
     console.log(
       `Chờ 660 giây (11 phút) trước khi kiểm tra trạng thái claim...`
@@ -310,31 +326,49 @@ async function processAllAccounts(cycleCount, intervalHours) {
     }
 
     console.log(`📋 Tìm thấy ${privateKeys.length} ví trong wallet.txt`.cyan);
-    console.log(`Chạy ${cycleCount} chu kỳ cho mỗi tài khoản...`.yellow);
 
+    // 1. Stake cho tất cả tài khoản
+    console.log(`🟢 Bắt đầu stake cho toàn bộ tài khoản...`.yellow);
     for (let i = 0; i < privateKeys.length; i++) {
-      console.log(`\n🔄 Đang xử lý tài khoản ${i + 1} / ${privateKeys.length}`.cyan);
-      const success = await processAccount(privateKeys[i], cycleCount);
-      
-      if (!success) {
-        console.log(`⚠️ Không xử lý được tài khoản ${i + 1}, chuyển sang tài khoản tiếp theo`.yellow);
-      }
-      
-      if (i < privateKeys.length - 1) {
-        console.log("\nChuyển sang tài khoản tiếp theo sau 3 giây...".cyan);
-        await delay(3000);
-      }
+      console.log(`\n🔄 Stake cho tài khoản ${i + 1} / ${privateKeys.length}`.cyan);
+      const wallet = new ethers.Wallet(privateKeys[i], provider);
+      await stakeMON(wallet, 1);
+    }
+
+    // Chờ trước khi unstake
+    console.log("⏳ Chờ 5 giây trước khi unstake...".magenta);
+    await delay(5000);
+
+    // 2. Unstake cho tất cả tài khoản
+    console.log(`🟠 Bắt đầu unstake cho toàn bộ tài khoản...`.yellow);
+    for (let i = 0; i < privateKeys.length; i++) {
+      console.log(`\n🔄 Unstake cho tài khoản ${i + 1} / ${privateKeys.length}`.cyan);
+      const wallet = new ethers.Wallet(privateKeys[i], provider);
+      const balance = await provider.getBalance(wallet.address);
+      await UnstakeAprMON(wallet, 1);
+    }
+
+    // Chờ 660 giây (11 phút) trước khi claim
+    console.log("⏳ Chờ 660 giây trước khi claim...".magenta);
+    await delay(60000);
+
+    // 3. Claim cho tất cả tài khoản
+    console.log(`🔵 Bắt đầu claim cho toàn bộ tài khoản...`.yellow);
+    for (let i = 0; i < privateKeys.length; i++) {
+      console.log(`\n🔄 Claim cho tài khoản ${i + 1} / ${privateKeys.length}`.cyan);
+      const wallet = new ethers.Wallet(privateKeys[i], provider);
+      await claimMON(wallet, 1);
     }
 
     console.log(
       `\n✅ Tất cả ${privateKeys.length} tài khoản đã được xử lý thành công!`.green.bold
     );
-    
+
     if (intervalHours) {
-      console.log(`\n⏱️ Tất cả các tài khoản được xử lý. Đợt tiếp theo sẽ chạy sau ${intervalHours} giờ`.cyan);
-      setTimeout(() => processAllAccounts(cycleCount, intervalHours), intervalHours * 60 * 60 * 1000);
+      console.log(`\n⏱️ Chu kỳ tiếp theo sẽ chạy sau ${intervalHours} giờ`.cyan);
+      setTimeout(() => processAllAccounts(cycleCount, intervalHours), intervalHours * 3600000);
     }
-    
+
     return true;
   } catch (error) {
     console.error("❌ Thao tác không thành công:".red, error.message);
@@ -383,7 +417,7 @@ module.exports = {
   run, 
   runAutomated,
   stakeMON,
-  requestUnstakeAprMON,
+  UnstakeAprMON,
   claimMON,
   getRandomAmount,
   getRandomDelay,
