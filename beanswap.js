@@ -6,7 +6,7 @@ const config = require('./config');
 const RPC_URL = "https://testnet-rpc.monad.xyz/";
 const EXPLORER_URL = "https://testnet.monadexplorer.com/tx/";
 const WALLET_FILE = "wallet.txt";
-const ACCOUNT_SWITCH_DELAY = 3000;
+const ACCOUNT_SWITCH_DELAY = 1000;
 
 const ROUTER_CONTRACT = "0xCa810D095e90Daae6e867c19DF6D9A8C56db2c89";
 const WMON_CONTRACT = "0x760AfE86e5de5fa0Ee542fc7B7B713e1c5425701";
@@ -96,8 +96,8 @@ async function getRandomAmount(wallet, token, isToMON = false) {
 }
 
 function getRandomDelay() {
-  const minDelay = 30 * 1000;
-  const maxDelay = 1 * 60 * 1000;
+  const minDelay = 1 * 1000;
+  const maxDelay = 1 * 3* 1000;
   return Math.floor(Math.random() * (maxDelay - minDelay + 1) + minDelay);
 }
 
@@ -122,8 +122,11 @@ async function getTokenBalance(wallet, token) {
       };
     }
   } catch (error) {
-    console.error(`❌ Lỗi lấy số dư token ${token.name}: ${error.message}`.red);
+    const errorMessage = error.reason || error.message || "Không xác định";
+    console.error(`❌ Lỗi lấy số dư token ${token.name}: ${errorMessage}`.red);
     return { raw: ethers.BigNumber.from(0), formatted: "0" };
+    //console.error(`❌ Lỗi lấy số dư token ${token.name}: ${error.message}`.red);
+    //return { raw: ethers.BigNumber.from(0), formatted: "0" };
   }
 }
 
@@ -154,7 +157,7 @@ async function wrapMON(amount, wallet) {
   try {
     console.log(`🔄 Wrap ${ethers.utils.formatEther(amount)} MON → WMON...`.magenta);
     const wmonContract = new ethers.Contract(WMON_CONTRACT, WMON_ABI, wallet);
-    const tx = await wmonContract.deposit({ value: amount, gasLimit: 500000 });
+    const tx = await wmonContract.deposit({ value: amount, gasLimit: 150000 });
     console.log(`✔️ Wrap MON → WMON thành công`.green.underline);
     console.log(`➡️ Transaction sent: ${EXPLORER_URL}${tx.hash}`.yellow);
     await tx.wait();
@@ -169,7 +172,7 @@ async function unwrapMON(amount, wallet) {
   try {
     console.log(`🔄 Unwrap ${ethers.utils.formatEther(amount)} WMON → MON...`.magenta);
     const wmonContract = new ethers.Contract(WMON_CONTRACT, WMON_ABI, wallet);
-    const tx = await wmonContract.withdraw(amount, { gasLimit: 500000 });
+    const tx = await wmonContract.withdraw(amount, { gasLimit: 150000 });
     console.log(`✔️ Unwrap WMON → MON thành công`.green.underline);
     console.log(`➡️ Transaction sent: ${EXPLORER_URL}${tx.hash}`.yellow);
     await tx.wait();
