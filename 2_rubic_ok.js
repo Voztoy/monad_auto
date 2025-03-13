@@ -208,36 +208,13 @@ async function processAllAccounts(cycles, interval) {
 }
 
 function run() {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
+  const cyclesCount = 2;     // Ấn định 2 chu kỳ
+  const intervalHours = 1;   // Ấn định 1 tiếng một lần
 
-  rl.question(
-    "Bạn muốn thực hiện bao nhiêu chu kỳ cho mỗi tài khoản? (Enter mặc định 1): ",
-    (cycles) => {
-      rl.question(
-        "Bạn muốn mỗi chu kì chạy bao lâu một lần (tính bằng giờ)? (Nhấn enter để chạy luôn): ",
-        (hours) => {
-          let cyclesCount = cycles ? parseInt(cycles) : 1;
-          let intervalHours = hours ? parseInt(hours) : null;
-
-          if (
-            isNaN(cyclesCount) ||
-            (intervalHours !== null && isNaN(intervalHours))
-          ) {
-            console.log("❌ Vui lòng nhập số hợp lệ.".red);
-            rl.close();
-            return;
-          }
-          
-          processAllAccounts(cyclesCount, intervalHours);
-          rl.close();
-        }
-      );
-    }
-  );
+  console.log(`🔄 Chạy tự động: ${cyclesCount} chu kỳ, lặp lại mỗi ${intervalHours} giờ`.cyan);
+  processAllAccounts(cyclesCount, intervalHours);
 }
+
 
 async function runAutomated(cycles = 1, intervalHours = null) {
   await processAllAccounts(cycles, intervalHours);
