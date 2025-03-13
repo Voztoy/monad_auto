@@ -33,8 +33,8 @@ Mỗi privatekey một dòng (có 0x)
 Chạy (hoặc chọn dapp) để chạy lệnh
 
    ```bash
-   Node shmonad_fast
-   Node rubic_fast
+   Node 1_shmonad_ok
+   Node 2_rubic_ok
    ........
    ```
 
