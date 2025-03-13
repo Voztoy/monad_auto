@@ -59,8 +59,8 @@ async function getRandomAmount(wallet) {
 }
 
 function getRandomDelay() {
-  const minDelay = 30 * 1000;
-  const maxDelay = 1 * 60 * 1000;
+  const minDelay = 1000;
+  const maxDelay = 5000;
   return Math.floor(Math.random() * (maxDelay - minDelay + 1) + minDelay);
 }
 
@@ -84,7 +84,7 @@ async function wrapMON(wallet, amount, cycleNumber) {
       wallet
     );
     
-    const tx = await contract.deposit({ value: amount, gasLimit: 500000 });
+    const tx = await contract.deposit({ value: amount, gasLimit: 150000 });
     console.log(`✔️  Wrap MON → WMON thành công`.green.underline);
     console.log(`➡️  Transaction sent: ${EXPLORER_URL}${tx.hash}`.yellow);
     await tx.wait();
@@ -113,7 +113,7 @@ async function unwrapMON(wallet, amount, cycleNumber) {
       wallet
     );
     
-    const tx = await contract.withdraw(amount, { gasLimit: 500000 });
+    const tx = await contract.withdraw(amount, { gasLimit: 150000 });
     console.log(`✔️  Unwrap WMON → MON thành công`.green.underline);
     console.log(`➡️  Transaction sent: ${EXPLORER_URL}${tx.hash}`.yellow);
     await tx.wait();
@@ -185,7 +185,7 @@ async function runSwapCycles(cycles) {
       
       if (i < privateKeys.length - 1) {
         console.log(`\nChuyển sang ví tiếp theo sau 3 giây...`.yellow);
-        await delay(3000);
+        await delay(1000);
       }
     }
     
