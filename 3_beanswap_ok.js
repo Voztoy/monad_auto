@@ -13,6 +13,9 @@ const WMON_CONTRACT = "0x760AfE86e5de5fa0Ee542fc7B7B713e1c5425701";
 const USDC_CONTRACT = "0x62534E4bBD6D9ebAC0ac99aeaa0aa48E56372df0";
 const BEAN_CONTRACT = "0x268E4E24E0051EC27b3D27A95977E71cE6875a05";
 const JAI_CONTRACT = "0x70F893f65E3C1d7f82aad72f71615eb220b74D10";
+const MONAI_CONTRACT = "0x7348FAC1b35bE27B0b636F0881AFc9449eC54bA5";
+const shMON_CONTRACT = "0x3a98250F98Dd388C211206983453837C8365BDc1";
+
 
 const availableTokens = {
   MON: { name: "MON", address: null, decimals: 18, native: true },
@@ -20,6 +23,8 @@ const availableTokens = {
   USDC: { name: "USDC", address: USDC_CONTRACT, decimals: 6, native: false },
   BEAN: { name: "BEAN", address: BEAN_CONTRACT, decimals: 18, native: false },
   JAI: { name: "JAI", address: JAI_CONTRACT, decimals: 6, native: false },
+  MONAI: { name: "MONAI", address: MONAI_CONTRACT, decimals: 18, native: false },
+  shMON: { name: "shMON", address: shMON_CONTRACT, decimals: 18, native: false },
 };
 
 const ROUTER_ABI = [
@@ -96,8 +101,8 @@ async function getRandomAmount(wallet, token, isToMON = false) {
 }
 
 function getRandomDelay() {
-  const minDelay = 1 * 1000;
-  const maxDelay = 1 * 3* 1000;
+  const minDelay = 1000;
+  const maxDelay = 3000;
   return Math.floor(Math.random() * (maxDelay - minDelay + 1) + minDelay);
 }
 
@@ -125,8 +130,6 @@ async function getTokenBalance(wallet, token) {
     const errorMessage = error.reason || error.message || "Không xác định";
     console.error(`❌ Lỗi lấy số dư token ${token.name}: ${errorMessage}`.red);
     return { raw: ethers.BigNumber.from(0), formatted: "0" };
-    //console.error(`❌ Lỗi lấy số dư token ${token.name}: ${error.message}`.red);
-    //return { raw: ethers.BigNumber.from(0), formatted: "0" };
   }
 }
 
@@ -224,6 +227,7 @@ async function swapTokens(wallet, tokenA, tokenB, amountIn, isToMON = false) {
       expectedOut = amountsOut[amountsOut.length - 1];
       minAmountOut = expectedOut.mul(95).div(100);
     } catch (error) {
+      const errorMessage = error.reason || error.message || "Không xác định";
       console.error(`❌ Lỗi khi lấy amountsOut cho ${tokenA.name} → ${tokenB.name}: ${error.message}`.red);
       console.log(`⚠️ Có thể là do thiếu thanh khoản hoặc cặp token không hỗ trợ. Thử cặp token khác.`.yellow);
       return false;
@@ -329,35 +333,35 @@ async function getRandomTokenPair() {
 async function checkAndSwapToMON(wallet) {
   try {
     console.log(`🔍 Kiểm tra và swap các token có giá trị cao về MON...`.cyan);
-    
-    for (const tokenKey in availableTokens) {
-      const token = availableTokens[tokenKey];
-      if (token.native || token.name === "WMON") continue;
-      
-      const tokenBalance = await getTokenBalance(wallet, token);
-      if (tokenBalance.raw.isZero()) continue;
-      
+
+    // Tạo mảng promise để kiểm tra và swap token
+    const swapPromises = Object.values(availableTokens).map(async (token) => {
+      if (token.native || token.name === "WMON") return;
+
       try {
+        const tokenBalance = await getTokenBalance(wallet, token);
+        if (tokenBalance.raw.isZero()) return;
+
         const routerContract = new ethers.Contract(ROUTER_CONTRACT, ROUTER_ABI, wallet);
         const path = [token.address, WMON_CONTRACT];
         const amountsOut = await routerContract.getAmountsOut(tokenBalance.raw, path);
         const estimatedMONValue = amountsOut[amountsOut.length - 1];
         const estimatedMONFormatted = ethers.utils.formatEther(estimatedMONValue);
-        
+
         console.log(`💰 Số dư ${token.name}: ${tokenBalance.formatted} (≈ ${estimatedMONFormatted} MON)`.cyan);
-        
+
         if (estimatedMONValue.gt(ethers.utils.parseEther("0.5"))) {
           console.log(`⚠️ Phát hiện ${token.name} có giá trị lớn hơn 0.5 MON, đang swap về MON...`.yellow);
-          
+
           const approveSuccess = await approveTokenIfNeeded(wallet, token, tokenBalance.raw, ROUTER_CONTRACT);
           if (!approveSuccess) {
             console.log(`❌ Không thể approve token ${token.name}. Bỏ qua token này.`.red);
-            continue;
+            return;
           }
-          
+
           const amountToSwap = tokenBalance.raw.mul(99).div(100);
           const swapSuccess = await swapTokens(wallet, token, availableTokens.MON, amountToSwap, true);
-          
+
           if (swapSuccess) {
             console.log(`✅ Đã swap ${token.name} về MON thành công`.green);
           } else {
@@ -365,22 +369,28 @@ async function checkAndSwapToMON(wallet) {
           }
         }
       } catch (error) {
-        console.log(`⚠️ Lỗi kiểm tra giá trị của ${token.name}: ${error.message}`.yellow);
-        continue;
+        const errorMessage = error.reason || error.message || "Không xác định";
+        const shortMessage = errorMessage.length > 100 ? errorMessage.slice(0, 100) + "..." : errorMessage;
+        console.log(`⚠️ Lỗi kiểm tra giá trị của ${token.name}: ${shortMessage}`.yellow);
+        return { raw: ethers.BigNumber.from(0), formatted: "0" };
       }
-    }
-    
+    });
+
+    // Chờ tất cả các swap hoàn thành
+    await Promise.all(swapPromises);
+
+    // Kiểm tra và unwrap WMON nếu cần
     try {
       const wmonToken = availableTokens.WMON;
       const wmonBalance = await getTokenBalance(wallet, wmonToken);
-      
+
       if (!wmonBalance.raw.isZero() && wmonBalance.raw.gt(ethers.utils.parseEther("0.5"))) {
         console.log(`💰 Số dư WMON: ${wmonBalance.formatted} (= ${wmonBalance.formatted} MON)`.cyan);
         console.log(`⚠️ Phát hiện WMON có giá trị lớn hơn 0.5 MON, đang unwrap về MON...`.yellow);
-        
+
         const amountToUnwrap = wmonBalance.raw.mul(99).div(100);
         const unwrapSuccess = await unwrapMON(amountToUnwrap, wallet);
-        
+
         if (unwrapSuccess) {
           console.log(`✅ Đã unwrap WMON về MON thành công`.green);
         } else {
@@ -390,16 +400,18 @@ async function checkAndSwapToMON(wallet) {
     } catch (error) {
       console.log(`⚠️ Lỗi kiểm tra và unwrap WMON: ${error.message}`.yellow);
     }
-    
+
+    // In số dư MON cuối cùng
     const monBalance = await getTokenBalance(wallet, availableTokens.MON);
     console.log(`💰 Số dư MON sau khi kiểm tra: ${monBalance.formatted} MON`.cyan);
-    
+
     return true;
   } catch (error) {
     console.error(`❌ Lỗi kiểm tra và swap token: ${error.message}`.red);
     return false;
   }
 }
+
 
 async function performSwapCycle(wallet, cycleNumber, totalCycles) {
   try {
@@ -599,35 +611,11 @@ async function processAllAccounts(cycles, interval) {
 }
 
 function run() {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
+  const cyclesCount = 2;     // Ấn định 2 chu kỳ
+  const intervalHours = 1;   // Ấn định 1 tiếng một lần
 
-  rl.question(
-    "Bạn muốn thực hiện bao nhiêu chu kỳ cho mỗi tài khoản? (Enter mặc định 1): ",
-    (cycles) => {
-      rl.question(
-        "Bạn muốn mỗi chu kì chạy bao lâu một lần (tính bằng giờ)? (Nhấn enter để chạy luôn): ",
-        (hours) => {
-          let cyclesCount = cycles ? parseInt(cycles) : 1;
-          let intervalHours = hours ? parseInt(hours) : null;
-
-          if (
-            isNaN(cyclesCount) ||
-            (intervalHours !== null && isNaN(intervalHours))
-          ) {
-            console.log("❌ Vui lòng nhập số hợp lệ.".red);
-            rl.close();
-            return;
-          }
-          
-          processAllAccounts(cyclesCount, intervalHours);
-          rl.close();
-        }
-      );
-    }
-  );
+  console.log(`🔄 Chạy tự động: ${cyclesCount} chu kỳ, lặp lại mỗi ${intervalHours} giờ`.cyan);
+  processAllAccounts(cyclesCount, intervalHours);
 }
 
 async function runAutomated(cycles = 1, intervalHours = null) {
